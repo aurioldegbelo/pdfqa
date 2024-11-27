@@ -4,9 +4,8 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 import google.generativeai as genai
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.chains.question_answering import load_qa_chain
 from langchain.prompts import PromptTemplate
 from dotenv import load_dotenv
 
@@ -89,7 +88,7 @@ def get_conversional_chain():
 
     model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3)
     prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
-    chain = load_qa_chain(model, chain_type="stuff", prompt=prompt)
+    chain = prompt | model
     return chain
 
 
@@ -107,7 +106,7 @@ def user_input(user_question, processed_pdf_text):
     """
 
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    new_db = FAISS.load_local("faisss_index", embeddings)
+    new_db = FAISS.load_local("faisss_index", embeddings, allow_dangerous_deserialization=True)
     docs = new_db.similarity_search(user_question)
 
     chain = get_conversional_chain()
@@ -115,10 +114,10 @@ def user_input(user_question, processed_pdf_text):
     # Combine user question and processed PDF text as context
     context = f"{processed_pdf_text}\n\nQuestion: {user_question}"
 
-    response = chain({"input_documents": docs, "question": user_question, "context": context}, return_only_outputs=True)
+    response = chain.invoke({"input_documents": docs, "question": user_question, "context": context}) #, return_only_outputs=True
 
     print(response)
-    st.write("Reply: ", response["output_text"])
+    st.write("Reply: ", response.content)
 
 
 def main():
@@ -126,7 +125,7 @@ def main():
     Main function for the Streamlit app.
     """
 
-    st.set_page_config("Chat With Multiple PDF")
+    st.set_page_config("Chat With Multiple PDF files")
     st.header("Chat with PDF's powered by Gemini 🙋‍♂️")
 
     user_question = st.text_input("Ask a Question from the PDF Files")
