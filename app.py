@@ -1,17 +1,30 @@
 import streamlit as st
 from PyPDF2 import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-import os
+
+# Generate the embeddings for the vector store
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-import google.generativeai as genai
+from langchain_openai import OpenAIEmbeddings
+
+# Vector store
 from langchain_community.vectorstores import FAISS
+
+# Call the respective model
 from langchain_google_genai import ChatGoogleGenerativeAI
+import google.generativeai as genai
+from langchain_openai import ChatOpenAI
+
 from langchain.prompts import PromptTemplate
 from dotenv import load_dotenv
 
+import os
+
+
 load_dotenv()
-os.getenv("GOOGLE_API_KEY")
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+os.getenv("OPENAI_API_KEY")
+#os.getenv("GOOGLE_API_KEY")
+#genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+
 
 
 def get_pdf_text(pdf_docs):
@@ -60,7 +73,11 @@ def get_vector_store(text_chunks):
         A FAISS vector store.
     """
 
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    openai_embeddings = OpenAIEmbeddings(model="text-embedding-3-small") # text-embedding-3-small, text-embedding-3-large
+    #gemini_embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+
+    embeddings = openai_embeddings
+
     vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
     vector_store.save_local("faisss_index")
     return vector_store
@@ -85,14 +102,16 @@ def get_conversional_chain():
 
     Answer:
     """
+    openai_model = ChatOpenAI(model="gpt-4o-mini")
+    #gemini_model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3) # temp => predictable and repetitive vs random and creative
+    model = openai_model
 
-    model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3)
     prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
     chain = prompt | model
     return chain
 
 
-def user_input(user_question, processed_pdf_text):
+def generate_response(user_question, processed_pdf_text):
     """
     Processes user input and generates a response using the conversational chain,
     providing both the user's question and the processed PDF text as context.
@@ -104,8 +123,11 @@ def user_input(user_question, processed_pdf_text):
     Returns:
         The generated response from the conversational chain.
     """
+    openai_embeddings = OpenAIEmbeddings(model="text-embedding-3-small") # text-embedding-3-small, text-embedding-3-large
+    #gemini_embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    embeddings = openai_embeddings
+
     new_db = FAISS.load_local("faisss_index", embeddings, allow_dangerous_deserialization=True)
     docs = new_db.similarity_search(user_question)
 
@@ -117,7 +139,9 @@ def user_input(user_question, processed_pdf_text):
     response = chain.invoke({"input_documents": docs, "question": user_question, "context": context}) #, return_only_outputs=True
 
     print(response)
-    st.write("Reply: ", response.content)
+    return response.content
+
+
 
 
 def main():
@@ -125,15 +149,39 @@ def main():
     Main function for the Streamlit app.
     """
 
-    st.set_page_config("Chat With Multiple PDF files")
-    st.header("Chat with PDF's powered by Gemini 🙋‍♂️")
+    st.set_page_config("Chat With Multiple PDF files", page_icon=":books:")
+    st.header("Chat with PDF files powered by Gemini or GPT4-o-mini :books: 🙋‍♂️")
+    
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
-    user_question = st.text_input("Ask a Question from the PDF Files")
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    #user_question = st.chat_input("Hello 👋. Please enter your question")
+    user_question = st.chat_input("What's your next question 🔎❔")
+
 
     if user_question:
         if st.session_state.get("pdf_docs"):
+            # store user message in the history
+            st.session_state.messages.append({"role": "user", "content": user_question})
+            
+            # display user message
+            with st.chat_message("user"):
+                st.markdown(user_question)
+            
+            # get user response
             processed_pdf_text = get_pdf_text(st.session_state["pdf_docs"])
-            user_input(user_question, processed_pdf_text)
+            response_data = generate_response(user_question, processed_pdf_text)
+            
+            # display user response
+            with st.chat_message("assistant"):    
+                st.write(response_data)
+
+            # store system response in the history
+            st.session_state.messages.append({"role": "assistant", "content": response_data})
         else:
             st.error("Please upload PDF files first.")
 
@@ -162,7 +210,7 @@ def main():
             st.session_state["text_chunks"] = []
             st.session_state["vector_store"] = None
             st.session_state["chain"] = None
-            st.experimental_rerun()
+            st.rerun()
 
         if st.session_state.get("pdf_docs"):
             st.subheader("Uploaded Files:")
