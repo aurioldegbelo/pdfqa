@@ -18,6 +18,7 @@ from langchain.prompts import PromptTemplate
 from dotenv import load_dotenv
 
 import os
+import time
 
 
 load_dotenv()
@@ -139,9 +140,7 @@ def generate_response(user_question, processed_pdf_text):
     response = chain.invoke({"input_documents": docs, "question": user_question, "context": context}) #, return_only_outputs=True
 
     print(response)
-    return response.content
-
-
+    return response.content, docs
 
 
 def main():
@@ -174,14 +173,25 @@ def main():
             
             # get user response
             processed_pdf_text = get_pdf_text(st.session_state["pdf_docs"])
-            response_data = generate_response(user_question, processed_pdf_text)
+            response, docs = generate_response(user_question, processed_pdf_text)
             
+            for doc in docs: 
+                print(doc, "\n")
+           # print(docs, "\n")
+
+            def response_stream():
+                for word in response.split(" "):
+                    yield word + " "
+                    time.sleep(0.03)
+
+
             # display user response
             with st.chat_message("assistant"):    
-                st.write(response_data)
+               # st.write(response)
+                st.write_stream(response_stream)
 
             # store system response in the history
-            st.session_state.messages.append({"role": "assistant", "content": response_data})
+            st.session_state.messages.append({"role": "assistant", "content": response})
         else:
             st.error("Please upload PDF files first.")
 
