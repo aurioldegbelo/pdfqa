@@ -158,7 +158,6 @@ def main():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    #user_question = st.chat_input("Hello 👋. Please enter your question")
     user_question = st.chat_input("What's your next question 🔎❔")
 
 
@@ -176,14 +175,12 @@ def main():
             response, docs = generate_response(user_question, processed_pdf_text)
             
             for doc in docs: 
-                print(doc, "\n")
-           # print(docs, "\n")
+                print("---", doc, "\n")
 
             def response_stream():
                 for word in response.split(" "):
                     yield word + " "
                     time.sleep(0.03)
-
 
             # display user response
             with st.chat_message("assistant"):    
