@@ -22,9 +22,9 @@ import time
 
 
 load_dotenv()
-os.getenv("OPENAI_API_KEY")
-#os.getenv("GOOGLE_API_KEY")
-#genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+#os.getenv("OPENAI_API_KEY")
+os.getenv("GOOGLE_API_KEY")
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 
 
@@ -74,10 +74,10 @@ def get_vector_store(text_chunks):
         A FAISS vector store.
     """
 
-    openai_embeddings = OpenAIEmbeddings(model="text-embedding-3-small") # text-embedding-3-small, text-embedding-3-large
-    #gemini_embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    #openai_embeddings = OpenAIEmbeddings(model="text-embedding-3-small") # text-embedding-3-small, text-embedding-3-large
+    gemini_embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 
-    embeddings = openai_embeddings
+    embeddings = gemini_embeddings
 
     vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
     vector_store.save_local("faisss_index")
@@ -103,9 +103,9 @@ def get_conversional_chain():
 
     Answer:
     """
-    openai_model = ChatOpenAI(model="gpt-4o-mini")
-    #gemini_model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3) # temp => predictable and repetitive vs random and creative
-    model = openai_model
+    #openai_model = ChatOpenAI(model="gpt-4o-mini")
+    gemini_model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3) # temp => predictable and repetitive vs random and creative
+    model = gemini_model
 
     prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
     chain = prompt | model
@@ -124,10 +124,10 @@ def generate_response(user_question, processed_pdf_text):
     Returns:
         The generated response from the conversational chain.
     """
-    openai_embeddings = OpenAIEmbeddings(model="text-embedding-3-small") # text-embedding-3-small, text-embedding-3-large
-    #gemini_embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    #openai_embeddings = OpenAIEmbeddings(model="text-embedding-3-small") # text-embedding-3-small, text-embedding-3-large
+    gemini_embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 
-    embeddings = openai_embeddings
+    embeddings = gemini_embeddings
 
     new_db = FAISS.load_local("faisss_index", embeddings, allow_dangerous_deserialization=True)
     docs = new_db.similarity_search(user_question)
@@ -175,7 +175,7 @@ def main():
             response, docs = generate_response(user_question, processed_pdf_text)
             
             for doc in docs: 
-                print("---", doc, "\n")
+                print("*********************", doc, "\n")
 
             def response_stream():
                 for word in response.split(" "):
