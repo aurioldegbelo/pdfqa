@@ -1,3 +1,5 @@
+# Code adapted from https://docs.streamlit.io/develop/tutorials/llms/build-conversational-apps and https://github.com/aniketpotabatti/Gemini-PDF-Question-Answering-System
+
 import streamlit as st
 from PyPDF2 import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -22,7 +24,7 @@ import time
 
 
 load_dotenv()
-#os.getenv("OPENAI_API_KEY")
+os.getenv("OPENAI_API_KEY")
 os.getenv("GOOGLE_API_KEY")
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
@@ -74,15 +76,16 @@ def get_vector_store(text_chunks):
         A FAISS vector store.
     """
 
-    #openai_embeddings = OpenAIEmbeddings(model="text-embedding-3-small") # text-embedding-3-small, text-embedding-3-large
+    openai_embeddings = OpenAIEmbeddings(model="text-embedding-3-small") # text-embedding-3-small, text-embedding-3-large
     gemini_embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 
-    embeddings = gemini_embeddings
+    vector_store_oa = FAISS.from_texts(text_chunks, embedding=openai_embeddings)
+    vector_store_oa.save_local("openai_index")
 
-    vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
-    vector_store.save_local("faisss_index")
-    return vector_store
+    vector_store_gm = FAISS.from_texts(text_chunks, embedding=gemini_embeddings)
+    vector_store_gm.save_local("gemini_index")
 
+    return vector_store_oa, vector_store_gm
 
 def get_conversional_chain():
     """
@@ -103,13 +106,13 @@ def get_conversional_chain():
 
     Answer:
     """
-    #openai_model = ChatOpenAI(model="gpt-4o-mini")
+    openai_model = ChatOpenAI(model="gpt-4o-mini")
     gemini_model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3) # temp => predictable and repetitive vs random and creative
-    model = gemini_model
-
+ 
     prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
-    chain = prompt | model
-    return chain
+    chain_oa = prompt | openai_model
+    chain_gm = prompt | gemini_model
+    return chain_oa, chain_gm
 
 
 def generate_response(user_question, processed_pdf_text):
@@ -124,23 +127,26 @@ def generate_response(user_question, processed_pdf_text):
     Returns:
         The generated response from the conversational chain.
     """
-    #openai_embeddings = OpenAIEmbeddings(model="text-embedding-3-small") # text-embedding-3-small, text-embedding-3-large
+    openai_embeddings = OpenAIEmbeddings(model="text-embedding-3-small") # text-embedding-3-small, text-embedding-3-large
     gemini_embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 
-    embeddings = gemini_embeddings
 
-    new_db = FAISS.load_local("faisss_index", embeddings, allow_dangerous_deserialization=True)
-    docs = new_db.similarity_search(user_question)
+    new_db_oa = FAISS.load_local("openai_index", openai_embeddings, allow_dangerous_deserialization=True)
+    new_db_gm = FAISS.load_local("gemini_index", gemini_embeddings, allow_dangerous_deserialization=True)
 
-    chain = get_conversional_chain()
+    docs_oa = new_db_oa.similarity_search(user_question)
+    docs_gm = new_db_gm.similarity_search(user_question)
+
+    chain_oa, chain_gm = get_conversional_chain()
 
     # Combine user question and processed PDF text as context
     context = f"{processed_pdf_text}\n\nQuestion: {user_question}"
 
-    response = chain.invoke({"input_documents": docs, "question": user_question, "context": context}) #, return_only_outputs=True
+    response_oa = chain_oa.invoke({"input_documents": docs_oa, "question": user_question, "context": context})  
+    response_gm = chain_gm.invoke({"input_documents": docs_gm, "question": user_question, "context": context})  
 
-    print(response)
-    return response.content, docs
+#    print(response)
+    return response_oa.content, response_gm.content
 
 
 def main():
@@ -149,12 +155,12 @@ def main():
     """
 
     st.set_page_config("Chat With Multiple PDF files", page_icon=":books:")
-    st.header("Chat with PDF files powered by Gemini or GPT4-o-mini :books: 🙋‍♂️")
+    st.header("Chat with PDF files powered by GPT-4o-mini and Gemini-Pro :books: 🙋‍♂️")
     
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    for message in st.session_state.messages:
+    for message in reversed(st.session_state.messages):
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
@@ -172,23 +178,28 @@ def main():
             
             # get user response
             processed_pdf_text = get_pdf_text(st.session_state["pdf_docs"])
-            response, docs = generate_response(user_question, processed_pdf_text)
+            response_oa, response_gm = generate_response(user_question, processed_pdf_text)
             
-            for doc in docs: 
-                print("*********************", doc, "\n")
+            def response_oa_stream():
+                for word in response_oa.split(" "):
+                    yield word + " "
+                    time.sleep(0.03)
 
-            def response_stream():
-                for word in response.split(" "):
+            def response_gm_stream():
+                for word in response_gm.split(" "):
                     yield word + " "
                     time.sleep(0.03)
 
             # display user response
-            with st.chat_message("assistant"):    
-               # st.write(response)
-                st.write_stream(response_stream)
+            with st.chat_message("openai"):    
+                 st.write_stream(response_oa_stream)
+            with st.chat_message("gemini"):    
+                 st.write_stream(response_gm_stream)
 
             # store system response in the history
-            st.session_state.messages.append({"role": "assistant", "content": response})
+            st.session_state.messages.append({"role": "openai", "content": response_oa, "avatar":"🤖"})
+            st.session_state.messages.append({"role": "gemini", "content": response_gm, "avatar":"💻"})
+
         else:
             st.error("Please upload PDF files first.")
 
@@ -204,19 +215,23 @@ def main():
                     for page in pdf_reader.pages:
                         raw_text += page.extract_text()
                 text_chunks = get_text_chunks(raw_text)
-                vector_store = get_vector_store(text_chunks)
-                chain = get_conversional_chain()
+                vector_store_oa, vector_store_gm = get_vector_store(text_chunks)
+                chain_oa, chain_gm = get_conversional_chain()
                 st.session_state["pdf_docs"] = pdf_docs
                 st.session_state["text_chunks"] = text_chunks
-                st.session_state["vector_store"] = vector_store
-                st.session_state["chain"] = chain
+                st.session_state["vector_store_oa"] = vector_store_oa
+                st.session_state["vector_store_oa"] = vector_store_gm
+                st.session_state["chain_oa"] = chain_oa
+                st.session_state["chain_gm"] = chain_gm
                 st.success("PDFs processed successfully!")
 
         if st.button("Reset"):
             st.session_state["pdf_docs"] = []
             st.session_state["text_chunks"] = []
-            st.session_state["vector_store"] = None
-            st.session_state["chain"] = None
+            st.session_state["vector_store_oa"] = None
+            st.session_state["vector_store_oa"] = None
+            st.session_state["chain_oa"] = None
+            st.session_state["chain_gm"] = None
             st.rerun()
 
         if st.session_state.get("pdf_docs"):
