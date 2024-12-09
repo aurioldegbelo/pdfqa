@@ -1,4 +1,4 @@
-# PDF Question Answering Application
+# PDF Question Answering
 
 This Streamlit app lets users upload, process multiple PDFs, and ask questions on the content using a conversational chat. 
 
